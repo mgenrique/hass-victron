@@ -152,10 +152,10 @@ class VictronSensor(CoordinatorEntity[victronEnergyDeviceUpdateCoordinator], Sen
         self._attr_unique_id = f"{description.slave}_{description.key}"
         if description.slave not in (0, 100, 225):
             self.entity_id = (
-                f"{SENSOR_DOMAIN}.{DOMAIN}_{description.key}_{description.slave}"
+                f"{SENSOR_DOMAIN}.{DOMAIN}_{description.key}_{description.slave}".lower()
             )
         else:
-            self.entity_id = f"{SENSOR_DOMAIN}.{DOMAIN}_{description.key}"
+            self.entity_id = f"{SENSOR_DOMAIN}.{DOMAIN}_{description.key}".lower()
 
     @callback
     def _handle_coordinator_update(self) -> None:

@@ -83,10 +83,10 @@ class VictronSwitch(CoordinatorEntity[victronEnergyDeviceUpdateCoordinator], Swi
         self._attr_unique_id = f"{description.slave}_{description.key}"
         if description.slave not in (0, 100, 225):
             self.entity_id = (
-                f"{SWITCH_DOMAIN}.{DOMAIN}_{description.key}_{description.slave}"
+                f"{SWITCH_DOMAIN}.{DOMAIN}_{description.key}_{description.slave}".lower()
             )
         else:
-            self.entity_id = f"{SWITCH_DOMAIN}.{DOMAIN}_{description.key}"
+            self.entity_id = f"{SWITCH_DOMAIN}.{DOMAIN}_{description.key}".lower()
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the device."""

@@ -202,9 +202,9 @@ class VictronNumber(CoordinatorEntity[victronEnergyDeviceUpdateCoordinator], Num
 
         self._attr_unique_id = f"{description.slave}_{description.key}"
         if description.slave not in (0, 100, 225):
-            self.entity_id = f"{NUMBER_DOMAIN}.{DOMAIN}_{description.key}_{description.slave}"
+            self.entity_id = f"{NUMBER_DOMAIN}.{DOMAIN}_{description.key}_{description.slave}".lower()
         else:
-            self.entity_id = f"{NUMBER_DOMAIN}.{DOMAIN}_{description.key}"
+            self.entity_id = f"{NUMBER_DOMAIN}.{DOMAIN}_{description.key}".lower()
 
         self._attr_mode = description.mode or NumberMode.BOX
 

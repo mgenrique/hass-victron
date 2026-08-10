@@ -82,9 +82,9 @@ class VictronBinarySensor(CoordinatorEntity[victronEnergyDeviceUpdateCoordinator
 
         self._attr_unique_id = f"{description.slave}_{description.key}"
         if description.slave not in (0, 100, 225):
-            self.entity_id = f"{BINARY_SENSOR_DOMAIN}.{DOMAIN}_{description.key}_{description.slave}"
+            self.entity_id = f"{BINARY_SENSOR_DOMAIN}.{DOMAIN}_{description.key}_{description.slave}".lower()
         else:
-            self.entity_id = f"{BINARY_SENSOR_DOMAIN}.{DOMAIN}_{description.key}"
+            self.entity_id = f"{BINARY_SENSOR_DOMAIN}.{DOMAIN}_{description.key}".lower()
 
     @property
     def is_on(self) -> bool:
