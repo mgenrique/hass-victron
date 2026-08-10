@@ -7,12 +7,15 @@ from homeassistant.helpers.entity import EntityDescription
 
 @dataclass
 class VictronBaseEntityDescription(EntityDescription):
-    slave: int = None
-    value_fn: Callable[[dict], StateType] = lambda data, slave, key: data["data"][
-        str(slave) + "." + str(key)
-    ]
+    slave: int | None = None
+    value_fn: Callable[[dict, int, str], StateType] = (
+        lambda data, slave, key: (data.get("data", {}) if isinstance(data, dict) else {}).get(
+            f"{slave}.{key}"
+        )
+    )
 
 
 @dataclass
 class VictronWriteBaseEntityDescription(VictronBaseEntityDescription):
-    address: int = None
+    address: int | None = None
+

@@ -2,28 +2,24 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
-
 from dataclasses import dataclass
+import logging
+from typing import Any
 
 from homeassistant.components.switch import (
+    DOMAIN as SWITCH_DOMAIN,
     SwitchEntity,
     SwitchEntityDescription,
-    DOMAIN as SWITCH_DOMAIN,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, HassJob
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-
-from .coordinator import victronEnergyDeviceUpdateCoordinator
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, register_info_dict, SwitchWriteType, CONF_ADVANCED_OPTIONS
 from .base import VictronWriteBaseEntityDescription
-
-
-import logging
+from .const import CONF_ADVANCED_OPTIONS, DOMAIN, SwitchWriteType, register_info_dict
+from .coordinator import victronEnergyDeviceUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,22 +33,17 @@ async def async_setup_entry(
     victron_coordinator: victronEnergyDeviceUpdateCoordinator = hass.data[DOMAIN][
         config_entry.entry_id
     ]
-    _LOGGER.debug("attempting to setup switch entities")
-    descriptions = []
-    # TODO cleanup
-    if config_entry.options[CONF_ADVANCED_OPTIONS]:
-        register_set = victron_coordinator.processed_data()["register_set"]
+    _LOGGER.debug("Attempting to setup switch entities")
+    descriptions: list[VictronEntityDescription] = []
+
+    options = {**config_entry.data, **config_entry.options}
+    if options.get(CONF_ADVANCED_OPTIONS, False):
+        register_set = victron_coordinator.processed_data().get("register_set", {})
         for slave, registerLedger in register_set.items():
             for name in registerLedger:
+                if name not in register_info_dict:
+                    continue
                 for register_name, registerInfo in register_info_dict[name].items():
-                    _LOGGER.debug(
-                        "unit == "
-                        + str(slave)
-                        + " registerLedger == "
-                        + str(registerLedger)
-                        + " registerInfo "
-                    )
-
                     if isinstance(registerInfo.entityType, SwitchWriteType):
                         description = VictronEntityDescription(
                             key=register_name,
@@ -61,15 +52,8 @@ async def async_setup_entry(
                             address=registerInfo.register,
                         )
                         descriptions.append(description)
-                        _LOGGER.debug("composed description == " + str(description))
 
-    entities = []
-    entity = {}
-    for description in descriptions:
-        entity = description
-        entities.append(VictronSwitch(hass, victron_coordinator, entity))
-    _LOGGER.debug("adding switches")
-    _LOGGER.debug(entities)
+    entities = [VictronSwitch(victron_coordinator, description) for description in descriptions]
     async_add_entities(entities)
 
 
@@ -77,34 +61,32 @@ async def async_setup_entry(
 class VictronEntityDescription(
     SwitchEntityDescription, VictronWriteBaseEntityDescription
 ):
-    """Describes victron sensor entity."""
+    """Describes victron switch entity."""
 
 
-class VictronSwitch(CoordinatorEntity, SwitchEntity):
-    """Representation of an Victron switch."""
+class VictronSwitch(CoordinatorEntity[victronEnergyDeviceUpdateCoordinator], SwitchEntity):
+    """Representation of a Victron switch."""
+
+    entity_description: VictronEntityDescription
 
     def __init__(
         self,
-        hass: HomeAssistant,
         coordinator: victronEnergyDeviceUpdateCoordinator,
         description: VictronEntityDescription,
     ) -> None:
-        self.coordinator = coordinator
-        self.description: VictronEntityDescription = description
-        self._attr_name = f"{description.name}"
-        self.data_key = str(self.description.slave) + "." + str(self.description.key)
+        super().__init__(coordinator)
+        self.entity_description = description
+        self.description = description
+        self._attr_name = description.name
+        self.data_key = f"{description.slave}.{description.key}"
 
-        self._attr_unique_id = f"{description.slave}_{self.description.key}"
-        if description.slave not in (100, 225):
+        self._attr_unique_id = f"{description.slave}_{description.key}"
+        if description.slave not in (0, 100, 225):
             self.entity_id = (
-                f"{SWITCH_DOMAIN}.{DOMAIN}_{self.description.key}_{description.slave}"
+                f"{SWITCH_DOMAIN}.{DOMAIN}_{description.key}_{description.slave}"
             )
         else:
-            self.entity_id = f"{SWITCH_DOMAIN}.{DOMAIN}_{self.description.key}"
-
-        self._update_job = HassJob(self.async_schedule_update_ha_state)
-        self._unsub_update = None
-        super().__init__(coordinator)
+            self.entity_id = f"{SWITCH_DOMAIN}.{DOMAIN}_{description.key}"
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the device."""
@@ -122,25 +104,29 @@ class VictronSwitch(CoordinatorEntity, SwitchEntity):
 
     @property
     def is_on(self) -> bool:
+        """Return true if switch is on."""
         data = self.description.value_fn(
             self.coordinator.processed_data(),
             self.description.slave,
             self.description.key,
         )
-        """Return true if switch is on."""
-        return cast(bool, data)
+        return bool(data) if data is not None else False
 
     @property
     def available(self) -> bool:
-        full_key = str(self.description.slave) + "." + self.description.key
-        return self.coordinator.processed_data()["availability"][full_key]
+        if not self.coordinator.last_update_success or self.coordinator.processed_data() is None:
+            return False
+        availability = self.coordinator.processed_data().get("availability", {})
+        return availability.get(self.data_key, False)
 
     @property
     def device_info(self) -> entity.DeviceInfo:
         """Return the device info."""
+        slave_id = str(self.description.slave)
         return entity.DeviceInfo(
-            identifiers={(DOMAIN, self.unique_id.split("_")[0])},
-            name=self.unique_id.split("_")[1],
-            model=self.unique_id.split("_")[0],
-            manufacturer="victron",
+            identifiers={(DOMAIN, slave_id)},
+            name=f"Victron Device {slave_id}",
+            model=slave_id,
+            manufacturer="Victron Energy",
         )
+

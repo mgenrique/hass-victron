@@ -1,185 +1,138 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
 
-> # 📦 Repository Archived
-> 
-> This repository has been **archived** and is no longer actively maintained.
-> 
-> ### ❓ Why?
-> 
-> I've decided to archive this project. I've transitioned to using **MQTT** for faster and more reliable updates from **Victron** to **Home Assistant**, which better suits my current setup and development preferences.
-> 
-> ### 🛠️ Need Support or Looking for a Maintained Alternative?
-> 
-> I highly recommend switching to the following actively maintained repository:
-> 👉 [sfstar/hass-victron](https://github.com/sfstar/hass-victron)
-> 
-> 
-> 
-> Thanks to everyone who contributed and used this repo! 🙏
+# Victron GX Modbus TCP for Home Assistant
 
-This Repo is a fork of https://github.com/sfstar/hass-victron and is a continuation of that project
+A maintained and refactored fork of the Victron GX Modbus TCP integration for Home Assistant, updated to work with Python 3.12–3.14 and recent `pymodbus` versions.
 
-# Migration guide to switch to this repo
-Follow these steps to switch to the new repository. All steps are performed in HACS, and there is no need to remove the Victron integration from the Home Assistant Devices & Services page.
+This fork continues the work of the original project with significant internal changes to keep it compatible with modern Home Assistant installations and recent Victron GX firmware.
 
-**Important**: Make a backup before you begin. It’s unlikely to be needed, but better safe than sorry.
+![Victron GX device](https://user-images.githubusercontent.com/61006057/227771568-78497ecc-e863-46f2-b29e-e15c7c20a154.gif)
 
-**Breaking change**: Users that have a device with modbus id 0 connected should perform a rescan after installing this update.
-This will seperate the modbus device with id 0 into it's seperate dedicated device.
-Unfortunately historical data for the entities, when the device was placed under unit id 100, will not be transfered.
-All other entities and devices should remain unaffected.\
-\
-This fix was already made on the old repo in release v0.3.0 but was never set as latest so nobody had this fix yet
+## Project status
 
-***Steps***
-1. **Ensure you first upgrade to the latest version of Home Assistant (2025.1.0 or higher).** After this upgrade, the Victron integration will stop working, but that’s fine for now.
-2. **Go to HACS and remove the “Victron GX Modbus TCP” integration.**\
-When you attempt this, a message like the following may appear:\
-“The Victron GX Modbus TCP integration is configured or ignored. You need to delete the configuration for it before removing it from HACS.”\
-You can safely click **Ignore** to proceed.
-3. **Add the new repository using this link:**
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=remcom&repository=hass-victron&category=integration)
-4.	**Search for “Victron” in HACS.**\
-You will find two Victron integrations. Select the new one. You can verify it by checking that the documentation starts with:\
-“This Repo is a fork of https://github.com/sfstar/hass-victron and is a continuation of that project.”
-5.	**Download the integration.**
-6.	**Restart your Home Assistant instance.**\
-After restarting, the Victron integration should work as expected.
+This integration is maintained in this fork and is intended for users who need to read data from a Victron GX device via Modbus TCP in Home Assistant.
 
-# Victron GX modbusTCP integration
-This integration scans for all available registers of a provided GX device.
-It then uses the defined register ledgers to create entities for each and every register that is provided by the GX device.
+## What this integration does
 
-# Project release state
-Please note that the integration is currently in an acceptance state.
-This means that there are no breaking changes planned.
-If a breaking change were to be introduced expect the release notes to reflect this.
-If you are missing a feature or experience any issues please report them in the issue tracker.
+The integration connects to a Victron GX device exposed over Modbus TCP and creates Home Assistant entities based on the available registers.
+
+- Scans for available registers on the GX device.
+- Creates entities for sensors, switches, binary sensors, numbers, selects, buttons, and other supported controls.
+- Provides configuration options for host, port, update interval, and advanced features.
+
+## Compatibility
+
+This version is adapted to work with:
+
+- Modern Home Assistant installations (tested in HA core 2026.8.1)
+- Python 3.12, 3.13, and 3.14.
+- Recent `pymodbus` API changes.
+
+The refactoring includes a new decoding strategy and compatibility with parameter name changes across `pymodbus` versions.
+
+## Key refactoring changes
+
+During the update of this fork, several critical issues were fixed:
+
+- Replaced the Modbus payload decoder with a native implementation based on Python's `struct` module.
+- Added compatibility with `pymodbus` API changes (`unit`, `slave`, `slave_id`, `device_id`).
+- Fixed handling of slave `0`, which is the default for Cerbo GX devices.
+- Improved network stability and reconnection logic.
+- Correctly handled reserved or null values to avoid corrupt readings in the UI.
+- Adjusted entity ID generation to maintain compatibility with existing installations.
+- Reduced log noise for register blocks not supported by some devices.
+
+A detailed summary of the refactoring (in Spanish) is available in [RESUMEN_REFACTORIZACION.md](RESUMEN_REFACTORIZACION.md).
+
+## Installation
+
+### Installation via HACS
+
+1. Open HACS in Home Assistant.
+2. Add this repository as a custom integration repository.
+3. Search for **Victron** in HACS.
+4. Install the integration.
+5. Restart Home Assistant.
+6. Add the integration from **Settings -> Devices & Services**.
+
+### Manual installation
+
+1. Clone the repository.
+2. Copy the `custom_components/` folder to your Home Assistant instance.
+3. Restart Home Assistant.
+4. Add the integration from **Settings -> Devices & Services -> Add Integration**.
+
+## Migrating from previous versions
+
+If you are upgrading from an older version of the integration:
+
+- Create a backup before updating.
+- After installing this version, you may need to rescan the device if you were using Modbus ID `0`.
+- In some cases, old entity names and associated history may require manual review after migration.
 
 ## Limitations
-The current state of this integration provides the following limitations regarding it's use:
-- Configuring the integration will be relatively slow if a discovery scan is required.
 
-## Important Note
-This integration was written an tested with the latest victron firmware running.
-GX version: v3.53 (support validated from v2.92)
-Multiplus version: 552
+- Configuration can be slow if a full discovery scan is required.
+- Some registers depend on the GX firmware version and connected devices.
+- Older firmware versions may not expose all expected registers.
 
-Victron continuously improves upon the modbus implementation by adding new registers.
-Therefore older firmware versions might not expose all registers this integration expects to be present.
-This might (depending on your firmware and connected devices) cause odd behaviour where some but not all devices connected to your GX device will be correctly detected by this integration.
+## Recommended requirements
 
-The best solution for this issue is to upgrade to the latest firmware.
-You can also open an issue to get your firmware version supported.
-This issue should contain the following information:
-- Connected devices
-- Firmware versions of the connected devices
-- Missing device type (grid, vebus, bms can etc)
-- Missing unit id (among other 30, 100, 227, 228)
+It is recommended to use recent Victron firmware versions and keep Home Assistant up to date for best compatibility.
 
-Please note that it might take some time for older firmware versions to get full support (after a ticket is opened).
+## Configuration options
 
-## Currently planned improvements
-- Fully Switch to async
-- Investigate if scan without causing (ignorable) errors at the gx device is possible
-- Improve connection loss resilience (mark / unmark availability of entities)
-- Revisit datatypes used for storing register info
+### Host
+IP address of the Victron GX device with the Modbus TCP service enabled.
 
-# Installing the integration
-You can install this integration by following the steps for your preferred installation method
+### Port
+Modbus TCP port. The default is `502`, but this can be changed if you use a proxy or port forwarding.
 
-## Important announcement:
-Starting from homeassistant core version 2025.1.x the built-in modbus integration now uses pymodbus version 3.7.4.
-Version 0.3.0 (and up) of this integration will also use the 3.7.4 pymodbus version.
+### Interval
+Time between entity updates. On slower systems, very low intervals may cause issues.
 
-Although core version >= 2023.2 and previous versions of this integration should be compatible it is recommended that all users update both core and this integration in the same patch round.
-Since having multiple library version requirements might cause the built-in 3.1.1 library to be overwritten by 3.0.2 reference of versions 0.0.6 and earlier.
-This could cause issues if you are using specific configuration options of the built-in modbus integration that weren't working with pymodbus 3.0.2 and were fixed in 3.1.1
-
-## Manual
-1. Clone the repository to your machine.
-2. Copy the contents of custom_components/ to your machine running home assistant.
-3. Restart home assistant
-4. goto "settings -> devices and services -> integration"
-5. click on "add integration"
-6. Search for "victron"
-7. Fill in the correct options and submit
-
-## HACS
-
-### Default
-1. Add the integration through this link: 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=remcom&repository=hass-victron&category=integration)
-3. Restart home assistant
-4. Setup integration via the integration page.
-
-# GX device errors
-The integration scans for available units and register ranges upon installation and when selected in the options menu.
-This will cause "errors" in the GX device under "settings -> services -> modbus TCP" due to not every register set and unit being available (and victron not providing a discover unit / register to query)
-These errors can be cleared without any issue and should not be reported unless (after scanning) errors keep getting reported.
-
-# Disclaimer
-This integration speaks to the victron GX device.
-The GX device is an exposed integration point for a system capable of running on high voltages and currents.
-If the system were to become unstable it might lead to damage of equipment, fires and/or electrocution.
-Although this integration speaks to the (exposed by victron) modbusTCP server it might cause the system to become unstable in circumstances like (but not limited to):
-- High request frequency
-- (when implemented) writing to write_registers (for example changing the ess setpoint value)
-
-Therefore the following applies to anyone using this code:
-- This code is provided as is. 
-- The developer does not assume any liability for issues caused by the use of this integration.
-- Use at your own risk.
-
-# Options
-The integration provides end users with the following configuration options.
-
-## Host
-The IP address of the victron GX device running the modbusTCP service.
-It's only configureable during setup and it's recommended to make the GX device static in your router
-
-## Port
-The port on which victron exposes the modbusTCP service.
-Victron exposes the service on port 502, but this configuration option is present to allow for proxy configuration (via nginx etc).
-The average user doesn't need to change the port being used
-
-## Interval
-interval determines the number of rounded seconds to use between updating the entities provided by this integration.
-For slower systems setting the interval to lower than 5 seconds might cause issues.
-Setting a interval of 0 will result in an interval of 1 seconds being used.
-
-## Advanced
-Ticking the write support option enables an "advanced" users mode.
-If write support is disabled the integration is "safer" to use.
-Since you can't accidentally change any setting that might cause damage (i.e. to High currents for your cabling).
-
-It is currently unknown and untested if the ModbusTCP server write registers are guard-railed. (Have protections/limits in place that prevent damage)
-Therefore, this integration offers users the ability to set "soft" guard rails by requiring current and voltage settings and limits to be specified by the end user.
-Although this make the integration safer, one should always double check if the provided write entities aren't capable of going to high / low for your system.
-
-Currently the options are tailored to the US / EU base settings and lifepo4 battery voltages.
-If you use another grid specification or battery type you can submit an issue to have them included.
+### Write support / Advanced
+Enables advanced features and write capabilities. Only use this if you know exactly which parameters you are modifying.
 
 ### AC Current
-The maximum current in Amps that your system is designed to handle.
-This doesn't make a difference between the AC OUT and the AC IN side of your setup.
-Please keep a small margin below your rated grid connection current (for example if you have 1x40A then set the integration to max 39 AMPS).
-
-This advice does assume that your system is fully setup to handle these currents.
+Maximum current supported by your AC installation.
 
 ### DC current
-The maximum current in Amps that your battery and battery cabling/busbars are rated to handle.
+Maximum current supported by your battery and DC cabling.
 
 ### DC Voltage
-The voltage profile to use in order to calculate the voltage boundaries (i.e. 4s, 8s and 16s lifepo4 configurations).
+DC voltage profile used to calculate battery limits and values.
 
 ### AC Voltage
-The AC voltage for a single phase in your region (currently supported is US: 120v and EU: 230v)
-This setting is used in combination with AC current to automatically calcultate the max wattage for applicable wattage settings.
+AC voltage for your region. Used to automatically calculate certain power limits.
 
-# Resources 
-The following links can be helpfull resources:
-- [setting up modbusTCP on the gx device](https://www.victronenergy.com/live/ccgx:modbustcp_faq)
-- [Great UI card for the gx device data](https://github.com/flixlix/power-flow-card-plus)
-![image](https://user-images.githubusercontent.com/61006057/227771568-78497ecc-e863-46f2-b29e-e15c7c20a154.gif)
+## Firmware compatibility notes
 
+Victron adds new registers over time. On older firmware, some registers may not exist yet, which can cause certain devices not to be detected correctly.
+
+If you encounter issues, please open an issue including:
+
+- Connected devices.
+- Firmware versions of the devices.
+- Affected device type.
+- Unit ID or Modbus ID involved.
+
+## Disclaimer
+
+This integration interacts with a real electrical system through the Victron GX device.
+
+Use this integration at your own risk. Excessive polling frequency or misuse of write features may affect system behavior if configured incorrectly.
+
+## Resources
+
+- [Victron Modbus TCP FAQ](https://www.victronenergy.com/live/ccgx:modbustcp_faq)
+- [Power Flow Card Plus](https://github.com/flixlix/power-flow-card-plus)
+
+## Note about the original project
+
+The original project was archived by its maintainer. This fork aims to keep the integration alive and compatible with the current Home Assistant and `pymodbus` ecosystem.
+
+## Credits
+
+- Original integration: [remcom/hass-victron](https://github.com/remcom/hass-victron)
+- Earlier upstream work: [sfstar/hass-victron](https://github.com/sfstar/hass-victron)

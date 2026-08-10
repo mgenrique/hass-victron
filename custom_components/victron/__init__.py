@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN, CONF_HOST, CONF_PORT, SCAN_REGISTERS, CONF_INTERVAL
+from .const import CONF_HOST, CONF_INTERVAL, CONF_PORT, DOMAIN, SCAN_REGISTERS
 from .coordinator import victronEnergyDeviceUpdateCoordinator as Coordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -21,28 +24,21 @@ PLATFORMS: list[Platform] = [
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Set up victron from a config entry."""
-
     hass.data.setdefault(DOMAIN, {})
-    # TODO 1. Create API instance
-    # TODO 2. Validate the API connection (and authentication)
-    # TODO 3. Store an API object for your platforms to access
-    # hass.data[DOMAIN][entry.entry_id] = MyApi(...)
+
+    host = config_entry.options.get(CONF_HOST) or config_entry.data.get(CONF_HOST, "localhost")
+    port = config_entry.options.get(CONF_PORT) or config_entry.data.get(CONF_PORT, 502)
+    scan_registers = config_entry.data.get(SCAN_REGISTERS) or config_entry.options.get(SCAN_REGISTERS, {})
+    interval = config_entry.options.get(CONF_INTERVAL) or config_entry.data.get(CONF_INTERVAL, 30)
 
     coordinator = Coordinator(
         hass,
-        config_entry.options[CONF_HOST],
-        config_entry.options[CONF_PORT],
-        config_entry.data[SCAN_REGISTERS],
-        config_entry.options[CONF_INTERVAL],
+        host=host,
+        port=port,
+        decodeInfo=scan_registers,
+        interval=interval,
     )
-    # try:
-    #     await coordinator.async_config_entry_first_refresh()
-    # except ConfigEntryNotReady:
-    #     await coordinator.api.close()
-    #     raise
 
-    # Finalize
-    hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][config_entry.entry_id] = coordinator
 
     await coordinator.async_config_entry_first_refresh()
@@ -57,7 +53,9 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
     if unload_ok := await hass.config_entries.async_unload_platforms(
         config_entry, PLATFORMS
     ):
-        hass.data[DOMAIN].pop(config_entry.entry_id)
+        coordinator: Coordinator = hass.data[DOMAIN].pop(config_entry.entry_id, None)
+        if coordinator and coordinator.api:
+            await hass.async_add_executor_job(coordinator.api.disconnect)
 
     return unload_ok
 
@@ -65,3 +63,4 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
 async def update_listener(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
     """Update listener."""
     await hass.config_entries.async_reload(config_entry.entry_id)
+

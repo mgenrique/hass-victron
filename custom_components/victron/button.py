@@ -4,26 +4,23 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
-
-from homeassistant.core import HomeAssistant, HassJob
-
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers import entity
+from typing import Any
 
 from homeassistant.components.button import (
-    ButtonEntityDescription,
+    DOMAIN as BUTTON_DOMAIN,
     ButtonDeviceClass,
     ButtonEntity,
-    DOMAIN as BUTTON_DOMAIN,
+    ButtonEntityDescription,
 )
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .base import VictronWriteBaseEntityDescription
+from .const import CONF_ADVANCED_OPTIONS, DOMAIN, ButtonWriteType, register_info_dict
 from .coordinator import victronEnergyDeviceUpdateCoordinator
-from .const import DOMAIN, CONF_ADVANCED_OPTIONS, register_info_dict, ButtonWriteType
-
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,41 +30,32 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Victron energy binary sensor entries."""
-    _LOGGER.debug("attempting to setup button entities")
+    """Set up Victron energy button entries."""
+    _LOGGER.debug("Attempting to setup button entities")
     victron_coordinator: victronEnergyDeviceUpdateCoordinator = hass.data[DOMAIN][
         config_entry.entry_id
     ]
-    descriptions = []
-    # TODO cleanup
-    register_set = victron_coordinator.processed_data()["register_set"]
-    for slave, registerLedger in register_set.items():
-        for name in registerLedger:
-            for register_name, registerInfo in register_info_dict[name].items():
-                _LOGGER.debug(
-                    "unit == $s register_ledger == %s registerInfo",
-                    {str(slave), str(registerLedger)},
-                )
-                if not config_entry.options[CONF_ADVANCED_OPTIONS]:
+    descriptions: list[VictronEntityDescription] = []
+
+    options = {**config_entry.data, **config_entry.options}
+    if options.get(CONF_ADVANCED_OPTIONS, False):
+        register_set = victron_coordinator.processed_data().get("register_set", {})
+        for slave, registerLedger in register_set.items():
+            for name in registerLedger:
+                if name not in register_info_dict:
                     continue
+                for register_name, registerInfo in register_info_dict[name].items():
+                    if isinstance(registerInfo.entityType, ButtonWriteType):
+                        description = VictronEntityDescription(
+                            key=register_name,
+                            name=register_name.replace("_", " "),
+                            slave=slave,
+                            device_class=ButtonDeviceClass.RESTART,
+                            address=registerInfo.register,
+                        )
+                        descriptions.append(description)
 
-                if isinstance(registerInfo.entityType, ButtonWriteType):
-                    description = VictronEntityDescription(
-                        key=register_name,
-                        name=register_name.replace("_", " "),
-                        slave=slave,
-                        device_class=ButtonDeviceClass.RESTART,
-                        address=registerInfo.register,
-                    )
-                    _LOGGER.debug("composed description == %s", {str(description)})
-                    descriptions.append(description)
-
-    entities = []
-    entity = {}
-    for description in descriptions:
-        entity = description
-        entities.append(VictronBinarySensor(victron_coordinator, entity))
-
+    entities = [VictronButton(victron_coordinator, description) for description in descriptions]
     async_add_entities(entities, True)
 
 
@@ -75,32 +63,32 @@ async def async_setup_entry(
 class VictronEntityDescription(
     ButtonEntityDescription, VictronWriteBaseEntityDescription
 ):
-    """Describes victron sensor entity."""
+    """Describes victron button entity."""
 
 
-class VictronBinarySensor(CoordinatorEntity, ButtonEntity):
+class VictronButton(CoordinatorEntity[victronEnergyDeviceUpdateCoordinator], ButtonEntity):
     """A button implementation for Victron energy device."""
+
+    entity_description: VictronEntityDescription
 
     def __init__(
         self,
         coordinator: victronEnergyDeviceUpdateCoordinator,
         description: VictronEntityDescription,
     ) -> None:
-        """Initialize the sensor."""
-        self.description: VictronEntityDescription = description
-        self._attr_device_class = description.device_class
-        self._attr_name = f"{description.name}"
-
-        self._attr_unique_id = f"{self.description.slave}_{self.description.key}"
-        if self.description.slave not in (100, 225):
-            self.entity_id = f"{BUTTON_DOMAIN}.{DOMAIN}_{self.description.key}_{self.description.slave}"
-        else:
-            self.entity_id = f"{BUTTON_DOMAIN}.{DOMAIN}_{self.description.key}"
-
-        self._update_job = HassJob(self.async_schedule_update_ha_state)
-        self._unsub_update = None
-
+        """Initialize the button."""
         super().__init__(coordinator)
+        self.entity_description = description
+        self.description = description
+        self._attr_device_class = description.device_class
+        self._attr_name = description.name
+        self.data_key = f"{description.slave}.{description.key}"
+
+        self._attr_unique_id = f"{description.slave}_{description.key}"
+        if description.slave not in (0, 100, 225):
+            self.entity_id = f"{BUTTON_DOMAIN}.{DOMAIN}_{description.key}_{description.slave}"
+        else:
+            self.entity_id = f"{BUTTON_DOMAIN}.{DOMAIN}_{description.key}"
 
     async def async_press(self) -> None:
         """Handle the button press."""
@@ -110,15 +98,19 @@ class VictronBinarySensor(CoordinatorEntity, ButtonEntity):
 
     @property
     def available(self) -> bool:
-        full_key = str(self.description.slave) + "." + self.description.key
-        return self.coordinator.processed_data()["availability"][full_key]
+        if not self.coordinator.last_update_success or self.coordinator.processed_data() is None:
+            return False
+        availability = self.coordinator.processed_data().get("availability", {})
+        return availability.get(self.data_key, False)
 
     @property
     def device_info(self) -> entity.DeviceInfo:
         """Return the device info."""
+        slave_id = str(self.description.slave)
         return entity.DeviceInfo(
-            identifiers={(DOMAIN, self.unique_id.split("_")[0])},
-            name=self.unique_id.split("_")[1],
-            model=self.unique_id.split("_")[0],
-            manufacturer="victron",
+            identifiers={(DOMAIN, slave_id)},
+            name=f"Victron Device {slave_id}",
+            model=slave_id,
+            manufacturer="Victron Energy",
         )
+

@@ -2,20 +2,22 @@
   "domain": "victron",
   "name": "victron",
   "codeowners": [
+    "@mgenrique",
     "@sfstar",
     "@remcom"
   ],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/remcom/hass-victron",
+  "documentation": "https://github.com",
   "homekit": {},
   "integration_type": "hub",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/remcom/hass-victron/issues",
+  "issue_tracker": "https://github.com/issues",
   "requirements": [
     "pymodbus>=3.7.4"
   ],
   "ssdp": [],
-  "version": "v0.0.0",
+  "version": "2.0.0",
   "zeroconf": []
 }
+

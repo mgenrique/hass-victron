@@ -57,34 +57,30 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
-    """Validate the user input allows us to connect.
-
-    Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
-    """
-    # TODO validate the data can be used to set up a connection.
-
-    # If your PyPI package is not built with async, pass your methods
-    # to the executor:
-    # await hass.async_add_executor_job(
-    #     your_validate_func, data["username"], data["password"]
-    # )
-
-    _LOGGER.debug("host = " + data[CONF_HOST])
-    _LOGGER.debug("port = " + str(data[CONF_PORT]))
-    hub = VictronHub(data[CONF_HOST], data[CONF_PORT])
+    """Validate the user input allows us to connect."""
+    _LOGGER.debug("host = %s, port = %s", data[CONF_HOST], data[CONF_PORT])
+    hub = VictronHub(data[CONF_HOST], int(data[CONF_PORT]))
 
     try:
-        hub.connect()
-        _LOGGER.debug("connection was succesfull")
-        discovered_devices = await scan_connected_devices(hub=hub)
-        _LOGGER.debug("successfully discovered devices")
-    except:
-        _LOGGER.error("failed to connect to the victron device")
+        connected = await hass.async_add_executor_job(hub.connect)
+        if not connected:
+            raise CannotConnect
+        _LOGGER.debug("Connection was successful")
+        discovered_devices = await hass.async_add_executor_job(hub.determine_present_devices)
+        await hass.async_add_executor_job(hub.disconnect)
+        _LOGGER.debug("Successfully discovered devices: %s", discovered_devices)
+    except CannotConnect:
+        raise
+    except Exception as err:
+        _LOGGER.error("Failed to connect to the Victron device: %s", err)
+        raise CannotConnect from err
+
     return {"title": DOMAIN, "data": discovered_devices}
 
 
-async def scan_connected_devices(hub: VictronHub) -> list:
-    return hub.determine_present_devices()
+async def scan_connected_devices(hass: HomeAssistant, hub: VictronHub) -> dict:
+    return await hass.async_add_executor_job(hub.determine_present_devices)
+
 
 
 class VictronFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
@@ -247,23 +243,25 @@ class VictronFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             try:
-                hub = VictronHub(user_input[CONF_HOST], user_input[CONF_PORT])
-                await hub.connect()
-                _LOGGER.info("connection was succesfull")
-            except:
+                hub = VictronHub(user_input[CONF_HOST], int(user_input[CONF_PORT]))
+                connected = await self.hass.async_add_executor_job(hub.connect)
+                if not connected:
+                    errors["base"] = "cannot_connect"
+                else:
+                    await self.hass.async_add_executor_job(hub.disconnect)
+                    _LOGGER.info("Reconfigure connection was successful")
+                    new_options = config_entry.options | {
+                        CONF_HOST: user_input[CONF_HOST],
+                        CONF_PORT: user_input[CONF_PORT],
+                    }
+                    return self.async_update_reload_and_abort(
+                        config_entry,
+                        title=DOMAIN,
+                        options=new_options,
+                        reason="reconfigure_successful",
+                    )
+            except Exception:
                 errors["base"] = "cannot_connect"
-
-            else:
-                new_options = config_entry.options | {
-                    CONF_HOST: user_input[CONF_HOST],
-                    CONF_PORT: user_input[CONF_PORT],
-                }
-                return self.async_update_reload_and_abort(
-                    config_entry,
-                    title=DOMAIN,
-                    options=new_options,
-                    reason="reconfigure_successful",
-                )
 
         return self.async_show_form(
             step_id="reconfigure",

@@ -2,29 +2,24 @@
 
 from __future__ import annotations
 
-from typing import cast
-
-import logging
 from dataclasses import dataclass
-
-from homeassistant.core import HomeAssistant, HassJob
-
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers import entity
+import logging
+from typing import Any
 
 from homeassistant.components.binary_sensor import (
-    BinarySensorEntityDescription,
-    BinarySensorEntity,
     DOMAIN as BINARY_SENSOR_DOMAIN,
+    BinarySensorEntity,
+    BinarySensorEntityDescription,
 )
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .coordinator import victronEnergyDeviceUpdateCoordinator
 from .base import VictronBaseEntityDescription
-from .const import DOMAIN, register_info_dict, BoolReadEntityType
-
+from .const import DOMAIN, BoolReadEntityType, register_info_dict
+from .coordinator import victronEnergyDeviceUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,38 +30,28 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Victron energy binary sensor entries."""
-    _LOGGER.debug("attempting to setup binary sensor entities")
+    _LOGGER.debug("Attempting to setup binary sensor entities")
     victron_coordinator: victronEnergyDeviceUpdateCoordinator = hass.data[DOMAIN][
         config_entry.entry_id
     ]
-    _LOGGER.debug(victron_coordinator.processed_data()["register_set"])
-    _LOGGER.debug(victron_coordinator.processed_data()["data"])
-    descriptions = []
-    # TODO cleanup
-    register_set = victron_coordinator.processed_data()["register_set"]
+
+    descriptions: list[VictronEntityDescription] = []
+    register_set = victron_coordinator.processed_data().get("register_set", {})
+
     for slave, register_ledger in register_set.items():
         for name in register_ledger:
+            if name not in register_info_dict:
+                continue
             for register_name, register_info in register_info_dict[name].items():
-                _LOGGER.debug(
-                    "unit == $s register_ledger == %s registerInfo",
-                    {str(slave), str(register_ledger)},
-                )
-
                 if isinstance(register_info.entityType, BoolReadEntityType):
                     description = VictronEntityDescription(
                         key=register_name,
                         name=register_name.replace("_", " "),
                         slave=slave,
                     )
-                    _LOGGER.debug("composed description == %s", {str(description)})
                     descriptions.append(description)
 
-    entities = []
-    entity = {}
-    for description in descriptions:
-        entity = description
-        entities.append(VictronBinarySensor(victron_coordinator, entity))
-
+    entities = [VictronBinarySensor(victron_coordinator, description) for description in descriptions]
     async_add_entities(entities, True)
 
 
@@ -74,11 +59,13 @@ async def async_setup_entry(
 class VictronEntityDescription(
     BinarySensorEntityDescription, VictronBaseEntityDescription
 ):
-    """Describes victron sensor entity."""
+    """Describes victron binary sensor entity."""
 
 
-class VictronBinarySensor(CoordinatorEntity, BinarySensorEntity):
+class VictronBinarySensor(CoordinatorEntity[victronEnergyDeviceUpdateCoordinator], BinarySensorEntity):
     """A binary sensor implementation for Victron energy device."""
+
+    entity_description: VictronEntityDescription
 
     def __init__(
         self,
@@ -86,21 +73,18 @@ class VictronBinarySensor(CoordinatorEntity, BinarySensorEntity):
         description: VictronEntityDescription,
     ) -> None:
         """Initialize the binary sensor."""
-        self.description: VictronEntityDescription = description
-        # this needs to be changed to allow multiple of the same type
-        self._attr_device_class = description.device_class
-        self._attr_name = f"{description.name}"
-
-        self._attr_unique_id = f"{self.description.slave}_{self.description.key}"
-        if self.description.slave not in (100, 225):
-            self.entity_id = f"{BINARY_SENSOR_DOMAIN}.{DOMAIN}_{self.description.key}_{self.description.slave}"
-        else:
-            self.entity_id = f"{BINARY_SENSOR_DOMAIN}.{DOMAIN}_{self.description.key}"
-
-        self._update_job = HassJob(self.async_schedule_update_ha_state)
-        self._unsub_update = None
-
         super().__init__(coordinator)
+        self.entity_description = description
+        self.description = description
+        self._attr_device_class = description.device_class
+        self._attr_name = description.name
+        self.data_key = f"{description.slave}.{description.key}"
+
+        self._attr_unique_id = f"{description.slave}_{description.key}"
+        if description.slave not in (0, 100, 225):
+            self.entity_id = f"{BINARY_SENSOR_DOMAIN}.{DOMAIN}_{description.key}_{description.slave}"
+        else:
+            self.entity_id = f"{BINARY_SENSOR_DOMAIN}.{DOMAIN}_{description.key}"
 
     @property
     def is_on(self) -> bool:
@@ -110,19 +94,23 @@ class VictronBinarySensor(CoordinatorEntity, BinarySensorEntity):
             self.description.slave,
             self.description.key,
         )
-        return cast(bool, data)
+        return bool(data) if data is not None else False
 
     @property
     def available(self) -> bool:
-        full_key = str(self.description.slave) + "." + self.description.key
-        return self.coordinator.processed_data()["availability"][full_key]
+        if not self.coordinator.last_update_success or self.coordinator.processed_data() is None:
+            return False
+        availability = self.coordinator.processed_data().get("availability", {})
+        return availability.get(self.data_key, False)
 
     @property
     def device_info(self) -> entity.DeviceInfo:
         """Return the device info."""
+        slave_id = str(self.description.slave)
         return entity.DeviceInfo(
-            identifiers={(DOMAIN, self.unique_id.split("_")[0])},
-            name=self.unique_id.split("_")[1],
-            model=self.unique_id.split("_", maxsplit=1)[0],
-            manufacturer="victron",
+            identifiers={(DOMAIN, slave_id)},
+            name=f"Victron Device {slave_id}",
+            model=slave_id,
+            manufacturer="Victron Energy",
         )
+
